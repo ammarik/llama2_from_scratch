@@ -43,7 +43,25 @@ class Transformer(nn.Module):
 
         # Precompute the frequencies of the rotary positional encodings
         self.freqs_complex = precompute_theta_pos_freqs(args.dim // args.n_heads, args.max_seq_len * 2, device=args.device)
+  
+    def forward(self, tokens: torch.Tensor, start_pos: int):
+        # (b, seq_len)
+        batch_size, seq_len = tokens.shape
+        # Note: This model is intended only for inferencing not training because for training
+        # of course we need to not have the KV cache and we need to be able to process multiple
+        # tokens, but our goal is actually to use the pre-trained LLaMA weights.
+        assert seq_len == 1, 'Only one token at a time can be processed'
 
+        # (b, seq_len) -> (b, seq_len, dim) # dim is 4096 for base 7B model, buy depending on the model size it can be different 
+        h = self.tok_embeddings(tokens)
 
+        # Retrieve the pairs (m, theta) corresponding to the positions  [start_pos, start_pos + seq_len]
+        freqs_complex = self.freqs_complex
 
+        # Consecutively apply all the encoder layers
+        for layer in self.layers:
+            h = layer(h, start_pos, freqs_complex)
+        h = self.norm(h)
+        output = self.output(h).float()
+        return output
 
