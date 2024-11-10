@@ -38,10 +38,9 @@ def precompute_theta_pos_freqs(head_dim: int, seq_len: int, device: str, theta: 
     # Shape: (seq_len) * (hed_dim / 2) -> (seq_len, head_dim / 2)
     freqs = torch.outer(m, theta).float()
     # We can compute complex numbers in the polar form c = R * exp(m * theta), where R = 1 as follows:
-    # (Seq_Len, Head_Dim / 2) -> (Seq_Len, Head_Dim / 2)
+    # (seq_len, head_dim / 2) -> (seq_len, head_dim / 2)
     freqs_complex = torch.polar(torch.ones_like(freqs), freqs)
     return freqs_complex
-
 
  
 class Transformer(nn.Module):
