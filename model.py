@@ -152,8 +152,8 @@ class SelfAttention(nn.Module):
 
         # Retrieve all the cached keys and values so far
         # (b, seq_len_kv, h_kvm, head_dim)
-        keys = self.cache_k[:batch_size, 0:start_pos+seq_len]
-        values = self.cache_k[:batch_size, 0:start_pos+seq_len]
+        keys = self.cache_k[:batch_size, :start_pos+seq_len]
+        values = self.cache_k[:batch_size, :start_pos+seq_len]
 
         # Repeat the heads of the K and V to reach the number of heads of the queries
         keys = repeat_kv(keys, self.n_rep)
