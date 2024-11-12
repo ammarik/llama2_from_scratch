@@ -116,9 +116,9 @@ class SelfAttention(nn.Module):
         self.head_dim =  args.dim // args.n_heads
 
         self.wq = nn.Linear(args.dim, args.n_heads * self.head_dim, bias=False)
-        self.wk = nn.Linear(args.dim, args.n_kv_heads * self.head_dim, bias=False)
-        self.wv = nn.Linear(args.dim, args.n_kv_heads * self.head_dim, bias=False)
-        self.wo = nn.Linear(args.n_heads * self.head_dim, bias=False)
+        self.wk = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
+        self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
+        self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False)
 
         self.cache_k = torch.zeros((args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim))
         self.cache_v = torch.zeros((args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim))
@@ -185,16 +185,20 @@ class FeedForward(nn.Module):
         if args.ffn_dim_multiplier is not None:
             hidden_dim = int(args.ffn_dim_multiplier * hidden_dim)
         # Round the hidden_dim to the neares multiple of the multiple_of parameter
-        hidden = args.multiple_of * ((hidden + args.multiple_of - 1) // args.multiple_of)
+        hidden_dim = args.multiple_of * ((hidden_dim + args.multiple_of - 1) // args.multiple_of)
         
         self.w1 = nn.Linear(args.dim, hidden_dim, bias=False)
-        self.w1 = nn.Linear(hidden_dim, args.dim, bias=False)
-        self.w1 = nn.Linear(args.dim, hidden_dim, bias=False)
+        self.w2 = nn.Linear(hidden_dim, args.dim, bias=False)
+        self.w3 = nn.Linear(args.dim, hidden_dim, bias=False)
 
-    def fowward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor):
+         # (b, seq_len, Dim) -> (b, seq_len, hidden_dim)
         swish = F.silu(self.w1(x))
+        # (B, Seq_Len, Dim) -> (B, Seq_Len, Hidden_Dim)
         x_V = self.w3(x)
+        # (B, Seq_Len, Hidden_Dim) * (B, Seq_Len, Hidden_Dim) --> (B, Seq_Len, Hidden_Dim)
         x = swish * x_V
+        # (b, seq_len, hidden_dim) -> (b, seq_Len, dim)
         x = self.w2(x)
         return x
 

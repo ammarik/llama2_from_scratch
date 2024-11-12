@@ -17,17 +17,17 @@ class LLaMA:
         self.args = model_args
     
     @staticmethod
-    def build(checkpoint_dir: str, tokenizer_path: str, load_model: bool, max_seq_len: int, max_batch_size: int, device: str):
+    def build(checkpoints_dir: str, tokenizer_path: str, load_model: bool, max_seq_len: int, max_batch_size: int, device: str):
         prev_time = time.time()
         if load_model:
-            checkpoints = sorted(Path(checkpoint_dir).glob('*.pth'))
+            checkpoints = sorted(Path(checkpoints_dir).glob('*.pth'))
             assert len(checkpoints) > 0, 'No checkpoint files found!'
             chk_path = checkpoints[0]
             print(f'Loading checkpoint {chk_path}')
             checkpoint = torch.load(chk_path, map_location='cpu')
             print(f'Loaded checkpoint in {time.time() - prev_time:.2f}s')
 
-        with open(Path(checkpoint_dir) / 'params.json', 'r') as f:
+        with open(Path(checkpoints_dir) / 'params.json', 'r') as f:
             params = json.loads(f.read())
 
         model_args: ModelArgs = ModelArgs(
