@@ -117,6 +117,17 @@ class LLaMA:
             out_tokens.append(current_prompt_tokens)
             out_text.append(self.tokenizer.decode(current_prompt_tokens))
         return (out_tokens, out_text)
+    
+    def _sample_top_p(self, probs, p):
+        probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
+        probs_sum = torch.cumsum(probs_sort, dim=-1)
+        mask = probs_sum - probs_sort > p
+        probs_sort[mask] = 0.0
+        # Redistribute probs, since now when we remove low probable tokens, it doesn't sum to 1 anymore.
+        probs_sort.div_(probs_sort.sum(div=-1, keepdim=True))
+        next_token = torch.multinomial(probs_sort, num_samples=1) # Sample tokens accordingly to probs - select one.
+        next_token = torch.gather(probs_idx, -1, next_token) # We sorted the probs tensor - we need to get original index of the token, so it matches the dictionary
+        return next_token
 
     
 if __name__ == '__main__':
