@@ -63,71 +63,60 @@ class LLaMA:
         prompt_tokens = [self.tokenizer.encode(prompt, out_type=int, add_bos=True, add_eos=False) for prompt in prompts]
         # Make sure the batch size is not too large
         batch_size = len(prompt_tokens)
-        assert batch_size <= self.args.max_batch_size, f"batch size must be less than or equal to {self.args.max_batch_size}"
+        assert batch_size <= self.args.max_batch_size
         max_prompt_len = max(len(prompt) for prompt in prompt_tokens)
-        # Make sure the prompt length is not larger than the maximum sequence length
-        assert max_prompt_len <= self.args.max_seq_len, f"prompt length must be less than or equal to {self.args.max_seq_len}"
+        # Make sure the prompt length is not loarger than the maximum seq len
+        assert max_prompt_len <= self.args.max_seq_len
         total_len = min(self.args.max_seq_len, max_gen_len + max_prompt_len)
 
         # Create the list that will contain the generated tokens, along with the initial prompt tokens
         pad_id = self.tokenizer.pad_id()
-        tokens = torch.full((batch_size, total_len), pad_id, dtype=torch.long, device=device)
+        tokens = torch.full((batch_size, total_len), pad_id, dtype=torch.long, device=device) # Create a new tensor of size batch_size x total_len filled by padding tokens
         for k, t in enumerate(prompt_tokens):
             # Populate the initial tokens with the prompt tokens
-            tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device=device)
+            tokens[k, :len(t)] = torch.tensor(t, dtype=torch.long, device=device)
         
-        eos_reached = torch.tensor([False] * batch_size, device=device)
-        prompt_tokens_mask = tokens != pad_id # True if the token is a prompt token, False otherwise
-        cur_iterator = tqdm(range(1, total_len), desc="Generating tokens")
-        for cur_pos in cur_iterator:
+        eos_reached = torch.Tensor([False] *  batch_size, device=device)
+        prompt_tokens_mask = tokens != pad_id # True if token is prompt, False if otherwise
+
+        for cur_pos in tqdm(range(1, total_len), desc='Generating tokens'):
             with torch.no_grad():
-                logits = self.model.forward(tokens[:, cur_pos-1:cur_pos], cur_pos)
+                logits = self.model.forward(tokens[:, cur_pos-1:cur_pos], cur_pos) # We pass in only one token, and we tell the model, what is the current pos (because of the KV cache)
             if temperature > 0:
                 # The temperature is applied before the softmax
                 probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
                 next_token = self._sample_top_p(probs, top_p)
             else:
-                # Greedily select the token with the max probability
+                # If we didn't specified any temperature we just use the greedy strategy
+                # Greedily select the token with the maximum probability
                 next_token = torch.argmax(logits[:, -1], dim=-1)
-
             next_token = next_token.reshape(-1)
-            # Only replace token if it is a padding token
+
+            # Only replace the token if it is padding token
+            #   In the beginning we already have some tokens that come from the prompt. We need to give
+            #   the prompt to the model to build the initial cache - but we don't care about the output 
+            #   for these.
+            #   So first, we will give in the prompt tokens to the model not because we care about what
+            #   the model will output for those tokens but only because we want the KV cache to be built
+            #   for those positions. And we only care about what is the model outputting after we give
+            #   the last token of the prompt to it.
             next_token = torch.where(prompt_tokens_mask[:, cur_pos], tokens[:, cur_pos], next_token)
             tokens[:, cur_pos] = next_token
-            # EOS is reached only if we found an EOS token for a padding position
-            eos_reached |= (~prompt_tokens_mask[:, cur_pos]) & (next_token == self.tokenizer.eos_id)
+            # EOS is reached only if we found an EOS token for padding position
+            eos_reached |= (~prompt_tokens_mask[:, cur_pos]) & (next_token == self.tokenizer.eos_id()) # If all of the inputs/outputs in the batch reached EOS - we stop the for loop
             if all(eos_reached):
                 break
-
+        
         out_tokens = []
         out_text = []
         for prompt_index, current_prompt_tokens in enumerate(tokens.tolist()):
             # Cut to the EOS token, if present
-            if self.tokenizer.eos_id in current_prompt_tokens:
-                eos_idx = current_prompt_tokens.index(self.tokenizer.eos_id)
+            if self.tokenizer.eos_id() in current_prompt_tokens:
+                eos_idx = current_prompt_tokens.index(self.tokenizer.eos_id())
                 current_prompt_tokens = current_prompt_tokens[:eos_idx]
             out_tokens.append(current_prompt_tokens)
             out_text.append(self.tokenizer.decode(current_prompt_tokens))
         return (out_tokens, out_text)
-    
-    def _sample_top_p(self, probs, p):
-        # (B, vocab_size)
-        probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
-        # (B, vocab_size)
-        probs_sum = torch.cumsum(probs_sort, dim=-1)
-        # (B, vocab_size)
-        # (Substracting "probs_sort" shifts the cumulative sum by 1 position to the right before masking)
-        mask = probs_sum - probs_sort > p 
-        # Zero out all the probabilities of tokens that are not selected by the Top P
-        probs_sort[mask] = 0.0 
-        # Redistribute the probabilities so that they sum up to 1.
-        probs_sort.div_(probs_sort.sum(dim=-1, keepdim=True))
-        # Sample a token (its index) from the top p distribution
-        next_token = torch.multinomial(probs_sort, num_samples=1)
-        # Get the token position in the vocabulary corresponding to the sampled index
-        next_token = torch.gather(probs_idx, -1, next_token) 
-        return next_token
-
 
     
 if __name__ == '__main__':
