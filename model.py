@@ -24,7 +24,7 @@ class ModelArgs:
 
 
 def precompute_theta_pos_freqs(head_dim: int, seq_len: int, device: str, theta: Optional[float]=10000.0):
-    assert head_dim % 2 == 0, 'DImension must be divisible by 2'
+    assert head_dim % 2 == 0, 'Dimension must be divisible by 2'
     # Build the theta parameters
     # According to the formula: theta_i = 10000 ^ (-2(i-1)/dim) for i = [1, 2 ... dim/2]
     # Shape: (head_dim / 2)
@@ -148,12 +148,12 @@ class SelfAttention(nn.Module):
 
         # Replace the entry in the cache for this token
         self.cache_k[:batch_size, start_pos:start_pos+seq_len] = xk
-        self.cache_v[:batch_size, start_pos:start_pos+seq_len] = xk
+        self.cache_v[:batch_size, start_pos:start_pos+seq_len] = xv
 
         # Retrieve all the cached keys and values so far
         # (b, seq_len_kv, h_kvm, head_dim)
         keys = self.cache_k[:batch_size, :start_pos+seq_len]
-        values = self.cache_k[:batch_size, :start_pos+seq_len]
+        values = self.cache_v[:batch_size, :start_pos+seq_len]
 
         # Repeat the heads of the K and V to reach the number of heads of the queries
         keys = repeat_kv(keys, self.n_rep)
@@ -161,14 +161,16 @@ class SelfAttention(nn.Module):
 
         # (b, 1, h_q, head_dim) -> (b, h_q, 1, head_dim)
         xq = xq.transpose(1, 2)
+        # (b, seq_ken_kv, h_q, head_dim) -> (b, h_q, seq_len_kv, head_dim)
         keys = keys.transpose(1, 2)
         values = values.transpose(1, 2)
 
         # (b, h_q, 1, head_dim) @ (b, h_q, head_dim, seq_len_kv) -> (b, h_q, 1, seq_len_kv)
         scores = torch.matmul(xq, keys.transpose(2,3)) / math.sqrt(self.head_dim)
+        # (b, h_q, 1, seq_len_kv) -> (b, h_q, 1, seq_len_kv)
         scores = F.softmax(scores.float(), dim=-1).type_as(xq)
 
-        # (B, h_q, 1, seq_len) @ (b, h_q, seq_len_kv, head_dim) -> (b, h_q, 1, head_dim)
+        # (b, h_q, 1, seq_len) @ (b, h_q, seq_len_kv, head_dim) -> (b, h_q, 1, head_dim)
         output = torch.matmul(scores, values)
 
         # concat heads outputs
@@ -259,7 +261,7 @@ class Transformer(nn.Module):
         h = self.tok_embeddings(tokens)
 
         # Retrieve the pairs (m, theta) corresponding to the positions  [start_pos, start_pos + seq_len]
-        freqs_complex = self.freqs_complex
+        freqs_complex = self.freqs_complex[start_pos:start_pos + seq_len]
 
         # Consecutively apply all the encoder layers
         for layer in self.layers:

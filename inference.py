@@ -24,7 +24,7 @@ class LLaMA:
             assert len(checkpoints) > 0, 'No checkpoint files found!'
             chk_path = checkpoints[0]
             print(f'Loading checkpoint {chk_path}')
-            checkpoint = torch.load(chk_path, map_location='cpu')
+            checkpoint = torch.load(chk_path, map_location=device)
             print(f'Loaded checkpoint in {time.time() - prev_time:.2f}s')
 
         with open(Path(checkpoints_dir) / 'params.json', 'r') as f:
@@ -76,7 +76,7 @@ class LLaMA:
             # Populate the initial tokens with the prompt tokens
             tokens[k, :len(t)] = torch.tensor(t, dtype=torch.long, device=device)
         
-        eos_reached = torch.Tensor([False] *  batch_size, device=device)
+        eos_reached = torch.tensor([False] *  batch_size, device=device)
         prompt_tokens_mask = tokens != pad_id # True if token is prompt, False if otherwise
 
         for cur_pos in tqdm(range(1, total_len), desc='Generating tokens'):
@@ -124,7 +124,7 @@ class LLaMA:
         mask = probs_sum - probs_sort > p
         probs_sort[mask] = 0.0
         # Redistribute probs, since now when we remove low probable tokens, it doesn't sum to 1 anymore.
-        probs_sort.div_(probs_sort.sum(div=-1, keepdim=True))
+        probs_sort.div_(probs_sort.sum(dim=-1, keepdim=True))
         next_token = torch.multinomial(probs_sort, num_samples=1) # Sample tokens accordingly to probs - select one.
         next_token = torch.gather(probs_idx, -1, next_token) # We sorted the probs tensor - we need to get original index of the token, so it matches the dictionary
         return next_token
