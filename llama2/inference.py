@@ -129,9 +129,9 @@ class LLaMA:
                 eos_idx = current_prompt_tokens.index(self.tokenizer.eos_id())
                 current_prompt_tokens = current_prompt_tokens[:eos_idx]
             out_tokens.append(current_prompt_tokens)
-            print(f'current_prompt_tokens: {current_prompt_tokens}')
-            for token in current_prompt_tokens:
-                print(f'decoded_token: |{self.tokenizer.decode(token)}|')
+            # print(f'current_prompt_tokens: {current_prompt_tokens}')
+            # for token in current_prompt_tokens:
+                # print(f'decoded_token: |{self.tokenizer.decode(token)}|')
             out_text.append(self.tokenizer.decode(current_prompt_tokens))
         return (out_tokens, out_text)
 
