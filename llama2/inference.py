@@ -139,7 +139,6 @@ class LLaMA:
     def text_completion_stream(self, prompt: str, temperature: float = 0.6, top_p: float = 0.9, max_gen_len: Optional[int] = None) -> Generator:
         # Convert prompt into tokens
         prompt_tokens = self.tokenizer.encode(prompt, out_type=int, add_bos=True, add_eos=False)
-        #print(f'Prompt tokens: {prompt_tokens}')
         
         # Batch size = 1
         batch_size = 1
@@ -148,23 +147,16 @@ class LLaMA:
         # Prompt length & Make sure the prompt length is not longer than the maximum seq len
         prompt_len = len(prompt)
         assert prompt_len <= self.args.max_seq_len
-        #print(f'Prompt len: {prompt_len}')
 
         # Max total length
         if max_gen_len is None:
             max_gen_len = self.args.max_seq_len - 1
         max_total_len = min(self.args.max_seq_len, max_gen_len + prompt_len)
-        #print(f'Max total len: {max_total_len}')
         
         # Create the list that will contain the generated tokens, along with the initial prompt tokens
         pad_id = self.tokenizer.pad_id()
         tokens = torch.full((max_total_len,), pad_id, dtype=torch.long, device=self.device) # Create a new tensor of size batch_size x total_len filled by padding tokens
-        print(f'Tokens: {tokens}')
         tokens[:len(prompt_tokens)] = torch.tensor(prompt_tokens, dtype=torch.long, device=self.device)
-        print(f'Tokens: {tokens}')
-
-        # prompt_tokens_mask = tokens != pad_id # True if token is prompt, False if otherwise
-        # print(f'prompt_tokens_mask: {prompt_tokens_mask}')
 
         out_tokens = []
         decoded_tokens = []
@@ -173,12 +165,9 @@ class LLaMA:
             with torch.no_grad():
                 extended_tokens = tokens[None, :] # Introduce one extra dimension, since model expects batch dimenion.
                 logits = self.model.forward(extended_tokens[:, cur_pos-1:cur_pos], cur_pos) # We pass in only one token, and we tell the model, what is the current pos (because of the KV cache)
-                #print(f'Logits: {logits}')
-                #print(f'Logits: {logits[0, 0, :]}')
             if temperature > 0:
                 # The temperature is applied before the softmax
                 probs = torch.softmax(logits[0, 0, :] / temperature, dim=-1)
-                #print(f'Probs: {probs}')
                 next_token = self._sample_top_p(probs, top_p)
             else:
                 # If we didn't specified any temperature we just use the greedy strategy
@@ -193,35 +182,26 @@ class LLaMA:
             #   the model will output for those tokens but only because we want the KV cache to be built
             #   for those positions. And we only care about what is the model outputting after we give
             #   the last token of the prompt to it.
-            #print(f'next_token: {next_token}')
-            #print(f'tokens[cur_pos]: {tokens[cur_pos]}')
-            #print(f'pad id: {pad_id}')
-
             if tokens[cur_pos] == pad_id:
                 if (next_token == self.tokenizer.eos_id()):
                     # EOS is reached only if we found an EOS token for padding position
                     break
 
                 tokens[cur_pos] = next_token
-                # Return current token
-                #print(f'next_token[0]: {next_token[0]}')
-                #print(f'next_token.tolist(): {next_token.tolist()}')
-                #print(f'next_token: {next_token}')
 
-                prev_len = len(decoded_tokens)
-                out_tokens = out_tokens + next_token.tolist()
+                prev_len = len(decoded_tokens)                  # Ugly hack
+                out_tokens = out_tokens + next_token.tolist()   # Ugly hack
 
-                #print(f'\n\nOUT TOKENS |{out_tokens}|\n\n')
+                # Decode the new token (Ugly hack - decode all tokens that we've got so far.
+                # When I tried to decode only the new token, it works, but it skips whitespaces. 
+                # See: https://github.com/huggingface/transformers/issues/22710,
+                # https://github.com/google/sentencepiece/issues/1043 )
                 decoded_tokens = self.tokenizer.decode(out_tokens)
-                #print(f'decoded_tokens: |{decoded_tokens}|')
 
+                # Ugly hack decode - get only newly decoded tokens
                 decoded_token = decoded_tokens[(prev_len-len(decoded_tokens)):]
                 
-                
-                #print(f'decoded_token: &{decoded_token}&')
+                # Yeld current token
                 yield decoded_token
 
-
-
-
-# Tokens:  P,P,P,n,_,_,_
+# Tokens:  P,P,P,n,_,_,

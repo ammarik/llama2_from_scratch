@@ -2,3 +2,6 @@ venv/
 llama-2-*/
 __pycache__/
 .DS_Store
+
+weights/*
+!weights/download.sh
